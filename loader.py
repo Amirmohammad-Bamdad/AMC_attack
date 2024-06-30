@@ -4,13 +4,17 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.utils import to_categorical
 
-path = 'E:\Clemson\Codes\DL_AMC\RML2016.10a\RML2016.10a_dict.pkl'
+path = 'E:\Clemson\Codes\AMC_attack\RML2016.10a\RML2016.10a_dict.pkl'
 
 class RMLDataset:
     def __init__(self, data_dir):
         self.data_dir = data_dir
         self.raw_data, self.mods, self.snrs = self.load_data(data_dir)
-        self.train_data, self.val_data, self.test_data = self.splitter(self.raw_data, self.mods, self.snrs)
+
+        self.train_indices, self.val_indices, self.test_indices, self.label,\
+            self.train_data, self.val_data, self.test_data =\
+                self.splitter(self.raw_data, self.mods, self.snrs)
+        
 
     def load_data(self, dir):
         data = pickle.load(open(dir, 'rb'), encoding="latin1")
@@ -74,4 +78,5 @@ class RMLDataset:
         val_labels = self.one_hotter(mods, val_labels)
         test_labels = self.one_hotter(mods, test_labels)  
 
-        return (train_input, train_labels), (val_input, val_labels), (test_input, test_labels)
+        return train_indices, val_indices, test_indices, label,\
+                    (train_input, train_labels), (val_input, val_labels), (test_input, test_labels)

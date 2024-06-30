@@ -4,61 +4,74 @@ from sklearn.metrics import confusion_matrix
 import json
 
 def total_plotter(history):
-    plt.plot(history.history['loss'], label='loss')
-    plt.plot(history.history['val_loss'], label='val_loss')
+    plt.plot(history['loss'], label='loss')
+    plt.plot(history['val_loss'], label='val_loss')
     plt.title('Model Loss')
     plt.ylabel('Loss')
     plt.xlabel('Epoch')
     plt.legend()
-    plt.show()
+    plt.savefig('figure/Model_Loss.png')
 
-    plt.plot(history.history['accuracy'], label='accuracy')
-    plt.plot(history.history['val_accuracy'], label='val_accuracy')
+    plt.plot(history['accuracy'], label='accuracy')
+    plt.plot(history['val_accuracy'], label='val_accuracy')
     plt.title('Model Accuracy')
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
     plt.legend()
-    plt.show()
+    plt.savefig('figure/Model_Accuracy.png')
 
 
 def plot_accuracy_curve(snrs, acc):
     plt.plot(snrs, list(acc.values()))
     plt.xlabel("Signal to Noise Ratio")
     plt.ylabel("Classification Accuracy")
-    plt.title("Classification Accuracy on RadioML 2016.10 Alpha")
+    plt.title("Classification Accuracy on RML 2016.10a")
     plt.tight_layout()
     plt.savefig('figure/each_acc.png')
     plt.close()
 
 
-def save_results(acc, acc_mod_snr, model_name, dropout_rate):
+def save_results(acc, acc_mod_snr, model_name):
     # Save accuracy for each modulation type per SNR
-    with open('predictresult/acc_for_mod_on_{}.json'.format(model_name), 'w') as f:
-        json.dump({"model": model_name, "dropout_rate": dropout_rate, "acc_mod_snr": acc_mod_snr.tolist()}, f)
+    with open('acc_mod_snr_{}.json'.format(model_name), 'w') as f:
+        json.dump({"model": model_name, "acc_mod_snr": acc_mod_snr.tolist()}, f)
 
     # Save overall accuracy per SNR
-    with open('predictresult/{}_d{}.json'.format(model_name, dropout_rate), 'w') as f:
-        json.dump({"model": model_name, "dropout_rate": dropout_rate, "acc": acc}, f)
+    with open('acc_{}.json'.format(model_name), 'w') as f:
+        json.dump({"model": model_name, "acc": acc}, f)
 
 
-def evaluate_per_snr(model, X_test, Y_test, snrs, classes):
+def evaluate_per_snr(model, X_test, Y_test, snrs, classes, labels, test_indices):
     acc = {}
     acc_mod_snr = np.zeros((len(classes), len(snrs)))
     
     for i, snr in enumerate(snrs):
-        test_X_i = X_test[np.where(np.array(snrs) == snr)]
-        test_Y_i = Y_test[np.where(np.array(snrs) == snr)]
-
+        snr_test = [labels[idx][1] for idx in test_indices]
+        test_X_i = X_test[np.where(np.array(snr_test) == snr)]
+        test_Y_i = Y_test[np.where(np.array(snr_test) == snr)]
+        
         test_Y_i_hat = model.predict(test_X_i)
-        cm = confusion_matrix(test_Y_i, test_Y_i_hat)
-        acc[snr] = 1.0 * np.trace(cm) / np.sum(cm) 
 
+        test_Y_i_hat = np.argmax(test_Y_i_hat, axis=1)
+        test_Y_i = np.argmax(test_Y_i, axis=1)
+
+        cm = confusion_matrix(test_Y_i, test_Y_i_hat)
+
+        plot_confusion_matrix(cm= cm, classes= classes, 
+                            title= f"Confusion matrix of {snr}db SNR",
+                            save_filename= f"figure/Confusion_matrix_{snr}db_SNR.png")
+        
+        # Accuracy of current signal-to-noise ratio: sum of the correctly classified modulations(trace of cm)
+        #  divided by the sum of all of all classification scores (sum of all elements of cm) 
+        acc[snr] = np.trace(cm) / np.sum(cm) 
+
+        # Accuracy of each Modulation
         acc_mod_snr[:, i] = np.diag(cm) / np.sum(cm, axis=1)
 
     return acc, acc_mod_snr
 
 
-def plot_accuracy_per_snr(snrs, acc_mod_snr, classes, dis_num):
+def plot_accuracy_per_snr(snrs, acc_mod_snr, classes, dis_num=11):
     num_classes = len(classes)
     num_plots = int(np.ceil(num_classes / dis_num))  # Calculate number of plots needed
 
