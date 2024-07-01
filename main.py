@@ -6,6 +6,7 @@ import pickle
 import utils
 from sklearn.metrics import confusion_matrix
 import numpy as np
+import json
 
 epochs = 10
 batch_size = 256
@@ -29,7 +30,7 @@ callbacks = [
     ]
 
 model = modelFile.CNNModel(input_shape=(2, 128), classes= len(mods)).model
-model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 model.summary()
 
 if os.path.isfile(weight_path):
@@ -63,10 +64,18 @@ utils.plot_confusion_matrix(cm= total_cm, classes= mods,
                             save_filename= "figure/Overall_final_confusion_matrix.png")
 
 utils.total_plotter(history)
-acc, acc_mod_snr = utils.evaluate_per_snr(model= model, X_test= x_test, Y_test= y_test,
+
+if os.path.isfile('acc_mod_snr.json'):
+    with open('acc_mod_snr.json', 'r') as f:  
+        acc_mod_snr = json.load(f)
+    with open('acc.json', 'r') as f:  
+        acc = json.load(f)
+else:
+    acc, acc_mod_snr = utils.evaluate_per_snr(model= model, X_test= x_test, Y_test= y_test,
                                            snrs= snrs, classes= mods, labels= labels,
                                              test_indices= test_indices)
 
-utils.save_results(acc= acc, acc_mod_snr= acc_mod_snr, model_name= "VT_CNN")
+    utils.save_results(acc= acc, acc_mod_snr= acc_mod_snr, model_name= "VT_CNN")
+
 
 utils.plot_accuracy_per_snr(snrs= snrs, acc_mod_snr= acc_mod_snr, classes= mods)

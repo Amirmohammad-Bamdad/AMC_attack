@@ -1,4 +1,5 @@
-from tensorflow import keras  
+from tensorflow import keras 
+import tensorflow as tf 
 from tensorflow.keras import layers
 
 class CNNModel(keras.Model):
@@ -7,7 +8,7 @@ class CNNModel(keras.Model):
         super(CNNModel, self).__init__()
         
         self.dropout_rate = 0.5
-
+        self.loss = tf.keras.losses.CategoricalCrossentropy()
         # Model layers
         self.reshape = layers.Reshape(input_shape + (1,), input_shape=input_shape)
         self.conv1 = layers.Conv2D(50, (1, 8), padding='same', activation="relu", name="conv1", kernel_initializer='glorot_uniform')

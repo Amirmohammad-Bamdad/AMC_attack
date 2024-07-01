@@ -33,11 +33,11 @@ def plot_accuracy_curve(snrs, acc):
 
 def save_results(acc, acc_mod_snr, model_name):
     # Save accuracy for each modulation type per SNR
-    with open('acc_mod_snr_{}.json'.format(model_name), 'w') as f:
+    with open('acc_mod_snr.json', 'w') as f:
         json.dump({"model": model_name, "acc_mod_snr": acc_mod_snr.tolist()}, f)
 
     # Save overall accuracy per SNR
-    with open('acc_{}.json'.format(model_name), 'w') as f:
+    with open('acc.json', 'w') as f:
         json.dump({"model": model_name, "acc": acc}, f)
 
 
