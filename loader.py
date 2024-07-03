@@ -1,7 +1,5 @@
 import pickle
 import numpy as np
-import tensorflow as tf
-from tensorflow import keras
 from tensorflow.keras.utils import to_categorical
 
 path = 'E:\Clemson\Codes\AMC_attack\RML2016.10a\RML2016.10a_dict.pkl'
