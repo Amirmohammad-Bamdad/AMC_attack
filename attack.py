@@ -40,6 +40,16 @@ def calculate_gradient(model, input_signal, input_label):
     
     return gradient
 
+def white_box_accuracy_test(Y, Y_adv_signal, input_label, classes):
+    class_Y = classes[int(np.argmax(Y, axis=1))]
+    class_Y_adv_signal = classes[int(np.argmax(Y_adv_signal, axis=1))]
+    class_input_label = classes[int(np.argmax(input_label, axis=1))]
+    
+    print(f"GroundTruth Label: {class_input_label}")
+    print(f"Original Model Detected Label: {class_Y}")
+    print(f"Attacked signal Detected Label: {class_Y_adv_signal}")
+    print("==================================================")
+    
 
 def FGSM(model, epsilons, input_signal, input_label, classes):
     for eps in epsilons:
@@ -48,20 +58,53 @@ def FGSM(model, epsilons, input_signal, input_label, classes):
         adv_signal = input_signal + eps*perturbation
         Y_adv_signal = model(adv_signal)
 
-        Y = model(input_signal)
+        Y = model.predict(input_signal)
+        print(f"epsilon = {eps}")
+        white_box_accuracy_test(Y, Y_adv_signal, input_label, classes)
         
-        class_Y = classes[int(np.argmax(Y, axis=1))]
-        class_Y_adv_signal = classes[int(np.argmax(Y_adv_signal, axis=1))]
-        class_input_label = classes[int(np.argmax(input_label, axis=1))]
+
+def bisection_search_whitebox_attack(model, input_data, input_label, classes):
+    eps_acc = 0.00001 * np.linalg.norm(input_data)  
+    target_class_onehot = np.zeros([len(classes)])
+    epsilon_vector = np.zeros([len(classes)])
+    
+    for class_index in range(len(classes)):
+        max_epsilon = np.linalg.norm(input_data)
+        min_epsilon = 0
+        r = calculate_gradient(model, input_data, input_label) # adversary perturbation
+        r_norm = r / np.linalg.norm(r)
         
-        print(f"eps = {eps}\nGroundTruth Label: {class_input_label}")
-        print(f"Original Model Detected Label: {class_Y}")
-        print(f"Attacked signal Detected Label: {class_Y_adv_signal}")
-        print("==================================================")
+        while (max_epsilon - min_epsilon > eps_acc):
+            
+            avg_epsilon = (max_epsilon + min_epsilon)/2
+            adv_x = input_data - r_norm*avg_epsilon
+
+            adv_label = model.predict(adv_x, verbose='False')
+            
+            if np.argmax(adv_label, axis=1) == np.argmax(input_label, axis=1):
+                min_epsilon = avg_epsilon
+            else:
+                max_epsilon = avg_epsilon
+            #print(adv_label)
+        epsilon_vector[class_index] = max_epsilon
+
+    target_class = np.argmin(epsilon_vector)
+    target_class_onehot[target_class] = 1
+    target_class_onehot = tf.expand_dims(target_class_onehot, axis=0)
+
+    epsilon_star = np.min(epsilon_vector)
+
+    perturbation = calculate_gradient(model, input_data, target_class_onehot)
+    norm_perturbation = perturbation / np.linalg.norm(perturbation)
+    perturbation = epsilon_star * norm_perturbation
+
+    adv_input = input_data - perturbation
+    Y_adv_signal = model.predict(adv_input)
+    Y = model.predict(input_data)
+
+    white_box_accuracy_test(Y, Y_adv_signal, input_label, classes)
 
 
-def bisection_search_whitebox_attack():
-    pass
 
 def black_box_attack_test(model, r, data, labels):
     adv_data = data + r
@@ -108,7 +151,8 @@ if __name__ == "__main__":
     reshaped_label = tf.expand_dims(input_label, axis=0)
 
     # White-Box Attack
-    FGSM(model, epsilons, reshaped_input, reshaped_label, mods)
+    #FGSM(model, epsilons, reshaped_input, reshaped_label, mods)
+    bisection_search_whitebox_attack(model, reshaped_input, reshaped_label, mods)
     
     # BLack-Box Attack
     #pca_based_black_box_attack(model, x_val, y_val, x_test, y_test)
