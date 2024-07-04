@@ -8,7 +8,7 @@ from sklearn.metrics import confusion_matrix
 import numpy as np
 import json
 
-epochs = 10
+epochs = 100
 batch_size = 256
 path = 'E:\Clemson\Codes\AMC_attack\RML2016.10a\RML2016.10a_dict.pkl'
 
@@ -67,15 +67,14 @@ utils.total_plotter(history)
 
 if os.path.isfile('acc_mod_snr.json'):
     with open('acc_mod_snr.json', 'r') as f:  
-        acc_mod_snr = json.load(f)
+        acc_mod_snr = json.load(f)['acc_mod_snr']
     with open('acc.json', 'r') as f:  
-        acc = json.load(f)
+        acc = json.load(f)['acc']
 else:
     acc, acc_mod_snr = utils.evaluate_per_snr(model= model, X_test= x_test, Y_test= y_test,
                                            snrs= snrs, classes= mods, labels= labels,
                                              test_indices= test_indices)
 
     utils.save_results(acc= acc, acc_mod_snr= acc_mod_snr, model_name= "VT_CNN")
-
 
 utils.plot_accuracy_per_snr(snrs= snrs, acc_mod_snr= acc_mod_snr, classes= mods)

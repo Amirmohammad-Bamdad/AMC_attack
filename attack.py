@@ -17,6 +17,7 @@ def initialize_parameters():
 
     m = modelFile.CNNModel(input_shape=(2, 128), classes= len(mods))
     model = m.model
+    model.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     model.load_weights(weight_path)
     loss_func = m.loss
     epsilons = [0.0001, 0.0005, 0.0008, 0.001, 0.005, 0.008, 0.01, 0.5]
@@ -68,25 +69,13 @@ def black_box_attack_test(model, r, data, labels):
     adv_test_loss, adv_test_acc  = model.evaluate(adv_data, labels, batch_size= 256)
     print("Test accuracy (Normal): ", test_acc)
     print("Test loss (Normal): ", test_loss)
-    print("Test accuracy (Normal): ", adv_test_acc)
-    print("Test loss (Normal): ", adv_test_loss)
+    print("Test accuracy (Adversarial): ", adv_test_acc)
+    print("Test loss (Adversarial): ", adv_test_loss)
 
 
 def pca_based_black_box_attack(model, data_points, label_points, x_test, y_test):
     max_epsilon = np.linalg.norm(data_points)
     
-    #for i, data in tqdm(enumerate(data_points)):
-    #    data = tf.convert_to_tensor(data)
-    #    data = tf.expand_dims(data, axis=0)
-    #    label = tf.expand_dims(label_points[i], axis=0)
-#
-    #    grad = calculate_gradient(model, data, label)
-    #    norm_grad = grad / np.linalg.norm(grad)
-    #    X.append(norm_grad)
-#
-    #X = np.vstack(X)
-    #X = tf.convert_to_tensor(X)
-    #print(X.shape)
     data_points = tf.convert_to_tensor(data_points)
     label_points = tf.convert_to_tensor(label_points)
     grad = calculate_gradient(model, data_points, label_points)
@@ -99,12 +88,15 @@ def pca_based_black_box_attack(model, data_points, label_points, x_test, y_test)
     X = tf.reshape(X, [nsamples, nx*ny])
     
     pca.fit_transform(X)
-    
+
     #Projection
     v1 = pca.transform(X)
     UAP_r = max_epsilon * v1
+    UAP_r = tf.expand_dims(UAP_r, axis=-1)
 
-    black_box_attack_test(model, UAP_r, x_test, y_test)
+    extended_UAP = tf.tile(UAP_r, [1,2,128])
+
+    black_box_attack_test(model, extended_UAP, x_test, y_test)
 
 
 
