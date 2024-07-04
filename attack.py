@@ -3,7 +3,7 @@ import modelFile
 import loader
 import random
 import numpy as np
-from tqdm import tqdm
+import utils
 from sklearn.decomposition import PCA
 
 def initialize_parameters():
@@ -12,6 +12,8 @@ def initialize_parameters():
     data = loader.RMLDataset(path)
     mods = data.mods
     snrs = data.snrs
+    labels = data.label
+    test_indices = data.test_indices
     x_val, y_val = data.val_data[0], data.val_data[1]
     x_test, y_test = data.test_data[0], data.test_data[1]
 
@@ -22,7 +24,7 @@ def initialize_parameters():
     loss_func = m.loss
     epsilons = [0.0001, 0.0005, 0.0008, 0.001, 0.005, 0.008, 0.01, 0.5]
 
-    return model, loss_func, epsilons, snrs, x_test, y_test, x_val, y_val, mods
+    return model, loss_func, epsilons, snrs, x_test, y_test, x_val, y_val, mods, labels, test_indices
 
 
 def sample_input(inputs, labels):
@@ -106,7 +108,7 @@ def bisection_search_whitebox_attack(model, input_data, input_label, classes):
 
 
 
-def black_box_attack_test(model, r, data, labels):
+def black_box_attack_test(model, r, data, labels, snrs, mods, test_indices, snr_labels):
     adv_data = data + r
     test_loss, test_acc  = model.evaluate(data, labels, batch_size= 256)
     adv_test_loss, adv_test_acc  = model.evaluate(adv_data, labels, batch_size= 256)
@@ -114,9 +116,22 @@ def black_box_attack_test(model, r, data, labels):
     print("Test loss (Normal): ", test_loss)
     print("Test accuracy (Adversarial): ", adv_test_acc)
     print("Test loss (Adversarial): ", adv_test_loss)
+    
+    print(data)
+    proto_tensor = tf.make_tensor_proto(adv_data)
+    adv_data = tf.make_ndarray(proto_tensor)
+
+    print(adv_data)
+    acc, acc_mod_snr, bers = utils.evaluate_per_snr(model= model, X_test= adv_data, Y_test= labels,
+                                           snrs= snrs, classes= mods, labels= snr_labels,
+                                             test_indices= test_indices)
+    
+    utils.plot_accuracy_per_snr(snrs= snrs, acc_mod_snr= acc_mod_snr, classes= mods, name= "UAP_PCA")
+    utils.plot_ber_vs_snr(snrs, bers, name= "UAP_PCA")
 
 
-def pca_based_black_box_attack(model, data_points, label_points, x_test, y_test):
+def pca_based_black_box_attack(model, data_points, label_points, x_test, y_test,
+                                             snrs, mods, test_indices, snr_labels):
     max_epsilon = np.linalg.norm(data_points)
     
     data_points = tf.convert_to_tensor(data_points)
@@ -139,12 +154,13 @@ def pca_based_black_box_attack(model, data_points, label_points, x_test, y_test)
 
     extended_UAP = tf.tile(UAP_r, [1,2,128])
 
-    black_box_attack_test(model, extended_UAP, x_test, y_test)
+    black_box_attack_test(model, extended_UAP, x_test, y_test, snrs, mods, test_indices, snr_labels)
 
 
 
 if __name__ == "__main__":
-    model, loss_func, epsilons, snrs, x_test, y_test, x_val, y_val, mods = initialize_parameters()
+    model, loss_func, epsilons, snrs, x_test, y_test, x_val, y_val, mods, labels, test_indices = initialize_parameters()
+    
     input_signal, input_label = sample_input(x_test, y_test)
     
     reshaped_input = tf.expand_dims(input_signal, axis=0)
@@ -152,8 +168,8 @@ if __name__ == "__main__":
 
     # White-Box Attack
     #FGSM(model, epsilons, reshaped_input, reshaped_label, mods)
-    bisection_search_whitebox_attack(model, reshaped_input, reshaped_label, mods)
+    #bisection_search_whitebox_attack(model, reshaped_input, reshaped_label, mods)
     
     # BLack-Box Attack
-    #pca_based_black_box_attack(model, x_val, y_val, x_test, y_test)
+    pca_based_black_box_attack(model, x_val, y_val, x_test, y_test, snrs, mods, test_indices, labels)
     

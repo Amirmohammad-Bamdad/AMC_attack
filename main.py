@@ -54,8 +54,8 @@ print("Test loss: ", test_loss)
 
 y_test_hat = model.predict(x_test)
 
-total_y_test = np.argmax(y_test, axis=1)
-total_y_test_hat = np.argmax(y_test_hat, axis=1)
+total_y_test = np.argmax(y_test, axis=1) #Labels
+total_y_test_hat = np.argmax(y_test_hat, axis=1) #Predictions
 
 total_cm = confusion_matrix(total_y_test, total_y_test_hat)
 
@@ -65,16 +65,20 @@ utils.plot_confusion_matrix(cm= total_cm, classes= mods,
 
 utils.total_plotter(history)
 
-if os.path.isfile('acc_mod_snr.json'):
+if os.path.isfile('acc_mod_snr.json') and os.path.isfile('acc.json') and os.path.isfile('bers.json'):
     with open('acc_mod_snr.json', 'r') as f:  
         acc_mod_snr = json.load(f)['acc_mod_snr']
     with open('acc.json', 'r') as f:  
         acc = json.load(f)['acc']
+    with open('bers.json', 'r') as f:  
+        bers = json.load(f)['bers']
+
 else:
-    acc, acc_mod_snr = utils.evaluate_per_snr(model= model, X_test= x_test, Y_test= y_test,
+    acc, acc_mod_snr, bers = utils.evaluate_per_snr(model= model, X_test= x_test, Y_test= y_test,
                                            snrs= snrs, classes= mods, labels= labels,
                                              test_indices= test_indices)
 
-    utils.save_results(acc= acc, acc_mod_snr= acc_mod_snr, model_name= "VT_CNN")
+    utils.save_results(acc= acc, acc_mod_snr= acc_mod_snr, bers= bers, model_name= "VT_CNN")
 
 utils.plot_accuracy_per_snr(snrs= snrs, acc_mod_snr= acc_mod_snr, classes= mods)
+utils.plot_ber_vs_snr(snrs, bers)
