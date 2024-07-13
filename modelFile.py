@@ -2,6 +2,29 @@ from tensorflow import keras
 import tensorflow as tf 
 from tensorflow.keras import layers
 
+
+
+class LSTM(keras.Model):
+    def __init__(self, num_classes = 11):
+        super(LSTM, self).__init__()
+
+        # LSTM unit with CuDNNLSTM layers
+        self.lstm1 = layers.CuDNNLSTM(units=128, return_sequences=True)
+        self.lstm2 = layers.CuDNNLSTM(units=128)
+        # DNN layer with softmax activation
+        self.outputs = layers.Dense(num_classes, activation="softmax")
+
+
+    def forward(self, input_shape):
+        inputs = keras.Input(shape= input_shape)
+        x = self.lstm1(inputs)
+        x = self.lstm2(x)
+        out = self.outputs(x)
+
+        return out
+
+
+
 class CNNModel(keras.Model):
     def __init__(self, input_shape, classes, weights= None):
 
