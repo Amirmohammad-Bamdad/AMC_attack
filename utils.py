@@ -21,17 +21,7 @@ def total_plotter(history):
     plt.savefig('figure/Model_Accuracy.png')
 
     plt.close()
-
-
-def plot_accuracy_curve(snrs, acc):
-    plt.plot(snrs, list(acc.values()))
-    plt.xlabel("Signal to Noise Ratio")
-    plt.ylabel("Classification Accuracy")
-    plt.title("Classification Accuracy on RML 2016.10a")
-    plt.tight_layout()
-    plt.savefig('figure/each_acc.png')
-    plt.close()
-
+    
 
 def save_results(acc, acc_mod_snr, bers, model_name):
     # Save accuracy for each modulation type per SNR
@@ -127,7 +117,7 @@ def plot_ber_vs_snr(snrs, bers, name="No_Attack"):
     plt.xlabel("Signal to Noise Ratio (SNR)")
     plt.ylabel("Bit Error Rate (BER)")
     plt.grid(True)
-    plt.title(f"BER Performance vs. SNR ({name})")
+    plt.title(f"BER vs. SNR ({name})")
     plt.tight_layout()
     plt.savefig(f"figure/ber_vs_snr_{name}.png")
     plt.close()
