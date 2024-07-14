@@ -119,7 +119,6 @@ def pgd_attack(model, data_points, label_points, x_test, y_test, iters, eps,
         perturbation = eps*perturbation
         adv_signal = adv_signal + perturbation
         adv_signal = tf.clip_by_value(adv_signal, adv_signal - eps, adv_signal + eps)
-        adv_signal = tf.clip_by_value(adv_signal, 0, 1)
 
     perturbation = eps*perturbation
 
