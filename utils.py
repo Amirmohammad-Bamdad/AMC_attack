@@ -3,14 +3,14 @@ import numpy as np
 from sklearn.metrics import confusion_matrix
 import json
 
-def total_plotter(history):
+def total_plotter(history, model_name):
     plt.plot(history['loss'], label='loss')
     plt.plot(history['val_loss'], label='val_loss')
     plt.title('Model Loss')
     plt.ylabel('Loss')
     plt.xlabel('Epoch')
     plt.legend()
-    plt.savefig('figure/Model_Loss.png')
+    plt.savefig(f'figure/{model_name}_Model_Loss.png')
 
     plt.plot(history['accuracy'], label='accuracy')
     plt.plot(history['val_accuracy'], label='val_accuracy')
@@ -18,7 +18,7 @@ def total_plotter(history):
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
     plt.legend()
-    plt.savefig('figure/Model_Accuracy.png')
+    plt.savefig(f'figure/{model_name}_Model_Accuracy.png')
 
     plt.close()
     
@@ -37,7 +37,7 @@ def save_results(acc, acc_mod_snr, bers, model_name):
         json.dump({"model": model_name, "bers": bers}, f)
 
 
-def evaluate_per_snr(model, X_test, Y_test, snrs, classes, labels, test_indices):
+def evaluate_per_snr(model, X_test, Y_test, snrs, classes, labels, test_indices, model_name):
     acc = {}
     acc_mod_snr = np.zeros((len(classes), len(snrs)))
     bers = {}
@@ -56,8 +56,8 @@ def evaluate_per_snr(model, X_test, Y_test, snrs, classes, labels, test_indices)
         cm = confusion_matrix(test_Y_i, test_Y_i_hat)
 
         plot_confusion_matrix(cm= cm, classes= classes, 
-                            title= f"Confusion matrix of {snr}db SNR",
-                            save_filename= f"figure/Confusion_matrix_{snr}db_SNR.png")
+                            title= f"{model_name} Confusion matrix of {snr}db SNR",
+                            save_filename= f"figure/{model_name}_Confusion_matrix_{snr}db_SNR.png")
         
         # Accuracy of current signal-to-noise ratio: sum of the correctly classified modulations(trace of cm)
         #  divided by the sum of all of all classification scores (sum of all elements of cm) 
@@ -69,7 +69,7 @@ def evaluate_per_snr(model, X_test, Y_test, snrs, classes, labels, test_indices)
     return acc, acc_mod_snr, bers
 
 
-def plot_accuracy_per_snr(snrs, acc_mod_snr, classes, name="No_Attack", display_num=11):
+def plot_accuracy_per_snr(snrs, acc_mod_snr, classes, model_name, name="No_Attack", display_num=11):
     num_classes = len(classes)
     num_plots = int(np.ceil(num_classes / display_num))  # Calculate number of plots needed
 
@@ -87,7 +87,7 @@ def plot_accuracy_per_snr(snrs, acc_mod_snr, classes, name="No_Attack", display_
         
         plt.legend()
         plt.grid(True)
-        plt.savefig(f'figure/acc_per_snr_{name}.png')
+        plt.savefig(f'figure/{model_name}_acc_per_snr_{name}.png')
         plt.close()
 
 
@@ -112,12 +112,12 @@ def calculate_ber(y, labels):
     return ber
 
 
-def plot_ber_vs_snr(snrs, bers, name="No_Attack"):
+def plot_ber_vs_snr(snrs, bers, model_name, name="No_Attack"):
     plt.plot(snrs, list(bers.values()), marker='o', linestyle='-')
     plt.xlabel("Signal to Noise Ratio (SNR)")
     plt.ylabel("Bit Error Rate (BER)")
     plt.grid(True)
     plt.title(f"BER vs. SNR ({name})")
     plt.tight_layout()
-    plt.savefig(f"figure/ber_vs_snr_{name}.png")
+    plt.savefig(f"figure/{model_name}_ber_vs_snr_{name}.png")
     plt.close()

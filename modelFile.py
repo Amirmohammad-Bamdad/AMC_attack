@@ -5,30 +5,26 @@ from tensorflow.keras import layers
 
 
 class LSTM(keras.Model):
-    def __init__(self, num_classes = 11):
+    def __init__(self, input_shape, num_classes = 11):
         super(LSTM, self).__init__()
 
-        # LSTM unit with CuDNNLSTM layers
-        self.lstm1 = layers.CuDNNLSTM(units=128, return_sequences=True)
-        self.lstm2 = layers.CuDNNLSTM(units=128)
-        # DNN layer with softmax activation
+        #self.inputs = layers.Input(input_shape, name='input')
+        self.lstm1 = layers.LSTM(units=128, return_sequences=True)
+        self.lstm2 = layers.LSTM(units=128)
         self.outputs = layers.Dense(num_classes, activation="softmax")
-
-
-    def forward(self, input_shape):
-        inputs = keras.Input(shape= input_shape)
+    
+    def call(self, inputs):
         x = self.lstm1(inputs)
         x = self.lstm2(x)
         out = self.outputs(x)
-
         return out
 
 
 
-class CNNModel(keras.Model):
-    def __init__(self, input_shape, classes, weights= None):
+class VTCNN(keras.Model):
+    def __init__(self, input_shape, num_classes, weights= None):
 
-        super(CNNModel, self).__init__()
+        super(VTCNN, self).__init__()
         
         self.dropout_rate = 0.5
         self.loss = tf.keras.losses.CategoricalCrossentropy()
@@ -41,7 +37,7 @@ class CNNModel(keras.Model):
         self.flatten = layers.Flatten()
         self.dense1 = layers.Dense(256, activation='relu', kernel_initializer='he_normal', name="dense1")
         self.dropout3 = layers.Dropout(self.dropout_rate)
-        self.dense2 = layers.Dense(classes, kernel_initializer='he_normal', name="dense2")
+        self.dense2 = layers.Dense(num_classes, kernel_initializer='he_normal', name="dense2")
         self.activation = layers.Activation('softmax')
 
         self.model = keras.Sequential([
@@ -62,6 +58,5 @@ class CNNModel(keras.Model):
             self.load_weights(weights)
 
 
-    def call(self, input):
-        return self.model(input)
+
 
