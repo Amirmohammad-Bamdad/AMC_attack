@@ -65,7 +65,6 @@ def adversary_test(model, r, data, labels, snrs, mods, test_indices, snr_labels,
     
     proto_tensor = tf.make_tensor_proto(adv_data)
     adv_data = tf.make_ndarray(proto_tensor)
-    print(adv_data.shape)
     
     _, acc_mod_snr, bers = utils.evaluate_per_snr(model= model, X_test= adv_data, Y_test= labels,
                                            snrs= snrs, classes= mods, labels= snr_labels,
@@ -88,7 +87,8 @@ def FGSM(model, epsilons, input_signal, input_label, x_test, y_test,
     for eps in epsilons:
         gradient = calculate_gradient(model, input_signal, input_label)
         perturbation = tf.sign(gradient)
-        adv_signal = input_signal + eps*perturbation
+        perturbation = eps*perturbation
+        adv_signal = input_signal + perturbation
         Y_adv_signal = model(adv_signal)
         Y = model.predict(input_signal)
         
@@ -105,6 +105,29 @@ def FGSM(model, epsilons, input_signal, input_label, x_test, y_test,
                     snrs= snrs, mods= classes, test_indices= test_indices,
                       snr_labels= snr_labels, attack_name= "FGSM")
         
+
+def pgd_attack(model, data_points, label_points, x_test, y_test, iters, eps,
+                                             snrs, mods, test_indices, snr_labels):
+    data_points = tf.convert_to_tensor(data_points)
+    label_points = tf.convert_to_tensor(label_points)
+    adv_signal = tf.identity(data_points)
+    perturbation = None
+
+    for _ in range(iters):
+        grad = calculate_gradient(model, adv_signal, label_points)
+        perturbation = tf.sign(grad)
+        perturbation = eps*perturbation
+        adv_signal = adv_signal + perturbation
+        adv_signal = tf.clip_by_value(adv_signal, adv_signal - eps, adv_signal + eps)
+        adv_signal = tf.clip_by_value(adv_signal, 0, 1)
+
+    perturbation = eps*perturbation
+
+    adversary_test(model= model, r= perturbation, data= x_test, labels= y_test,
+                    snrs= snrs, mods= mods, test_indices= test_indices,
+                      snr_labels= snr_labels, attack_name= "PGD")
+
+
 
 def bisection_search_FGM(model, input_data, input_label, classes, snr_labels):
     '''
@@ -194,6 +217,7 @@ if __name__ == "__main__":
 
     # White-Box Attack
     #FGSM(model, epsilons, x_val, y_val, x_test, y_test, snrs, mods, test_indices, labels)
-    bisection_search_FGM(model, reshaped_input, reshaped_label, mods, labels)
+    #bisection_search_FGM(model, reshaped_input, reshaped_label, mods, labels)
     #uap_pca_attack(model, x_val, y_val, x_test, y_test, snrs, mods, test_indices, labels)
+    pgd_attack(model, x_val, y_val, x_test, y_test, 20, 0.5, snrs, mods, test_indices, labels)
     
