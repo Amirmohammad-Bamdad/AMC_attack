@@ -6,6 +6,13 @@ import numpy as np
 import utils
 from sklearn.decomposition import PCA
 
+
+##########################################################
+loss_func = tf.keras.losses.CategoricalCrossentropy()
+model = modelFile.CNNModel(input_shape=(2, 128), classes= 11) ## VT-CNN
+#model = modelFile.CNNModel(input_shape=(2, 128), classes= 11) ## LSTM
+##########################################################
+
 def initialize_parameters():
     weight_path = './weights.h5'
     path = 'E:\Clemson\Codes\AMC_attack\RML2016.10a\RML2016.10a_dict.pkl'
@@ -18,14 +25,12 @@ def initialize_parameters():
     x_val, y_val = data.val_data[0], data.val_data[1] # Using val data or training purpose.(Because it is not too large like train set also has no overlap with test set)
     x_test, y_test = data.test_data[0], data.test_data[1]
 
-    m = modelFile.CNNModel(input_shape=(2, 128), classes= len(mods))
-    model = m.model
     model.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     model.load_weights(weight_path)
-    loss_func = m.loss
+
     epsilons = [0.0001, 0.0005, 0.0008, 0.001, 0.005, 0.008, 0.01, 0.5]
 
-    return model, loss_func, epsilons, snrs, x_test, y_test, x_val, y_val, mods, labels, test_indices
+    return model, epsilons, snrs, x_test, y_test, x_val, y_val, mods, labels, test_indices
 
 
 def sample_input(inputs, labels):
@@ -53,6 +58,13 @@ def single_sample_test(Y, Y_adv_signal, input_label, classes):
     print(f"Attacked signal Detected Label: {class_Y_adv_signal}")
     print("==================================================")
     
+
+def black_box(oracle, subtitute_model,):
+    '''
+    Oracle is the model that we want to attack to. We don't know its parameters or architecture.
+    subtitute model is the model that we use to train on it and 
+
+    '''
 
 def adversary_test(model, r, data, labels, snrs, mods, test_indices, snr_labels, attack_name):
     adv_data = data + r
@@ -208,7 +220,7 @@ def uap_pca_attack(model, data_points, label_points, x_test, y_test,
 
 
 if __name__ == "__main__":
-    model, loss_func, epsilons, snrs, x_test, y_test, x_val, y_val, mods, labels, test_indices = initialize_parameters()
+    model, epsilons, snrs, x_test, y_test, x_val, y_val, mods, labels, test_indices = initialize_parameters()
     
     input_signal, input_label = sample_input(x_test, y_test)
     reshaped_input = tf.expand_dims(input_signal, axis=0)
