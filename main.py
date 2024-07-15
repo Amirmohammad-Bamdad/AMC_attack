@@ -1,6 +1,7 @@
 import loader
 import modelFile
 import keras 
+import tensorflow as tf
 import os
 import pickle
 import utils
@@ -21,36 +22,39 @@ snrs = data.snrs
 labels = data.label
 test_indices = data.test_indices
 model = modelFile.VTCNN(input_shape=(2, 128), num_classes= len(mods)).model
-#model = modelFile.LSTM(input_shape=(128, 2), num_classes= len(mods))
+#model = modelFile.LSTM_AMC(input_shape=(128, 2), num_classes= len(mods))
 ###########################################################################
 
 x_train, y_train = data.train_data[0], data.train_data[1]
 x_val, y_val = data.val_data[0], data.val_data[1]
 x_test, y_test = data.test_data[0], data.test_data[1]
 
-weight_path = f'./{model_name}_weights.h5'
+weight_path = f'./{model_name}_weights/'
 callbacks = [
-    keras.callbacks.ModelCheckpoint(weight_path, monitor='val_loss', verbose= 1, save_best_only= True, mode= 'auto', save_weights_only=True),
+    keras.callbacks.ModelCheckpoint(weight_path, monitor='val_loss', verbose= 1, save_best_only= True, mode= 'auto', save_format="tf"),
     keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor= 0.5, verbose= 1, patince= 5, min_lr= 0.000001),
     keras.callbacks.EarlyStopping(monitor='val_loss', patience= 50, verbose= 1, mode= 'auto')
     ]
 
 
 model.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.built = True
+model.summary()
 
-if os.path.isfile(weight_path):
-    model.load_weights(weight_path)
-    with open('training_history.pkl', 'rb') as f:
+if os.path.isdir(weight_path):
+    #model.load_weights(weight_path)
+    model = tf.saved_model.load(weight_path)
+    with open(f'{model_name}_training_history.pkl', 'rb') as f:
         history = pickle.load(f)
 
 else:
     history = model.fit(x_train, y_train, batch_size= batch_size, epochs= epochs,
                      validation_data= [x_val, y_val], callbacks= callbacks)
     model.summary()
-    
-    with open('training_history.pkl', 'wb') as f:
+
+    with open(f'{model_name}_training_history.pkl', 'wb') as f:
         pickle.dump(history.history, f)
-    
+
     history = history.history
 
 
@@ -59,7 +63,6 @@ print("Test accuracy: ", test_acc)
 print("Test loss: ", test_loss)
 
 y_test_hat = model.predict(x_test)
-
 total_y_test = np.argmax(y_test, axis=1) #Labels
 total_y_test_hat = np.argmax(y_test_hat, axis=1) #Predictions
 
