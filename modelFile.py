@@ -3,10 +3,9 @@ import tensorflow as tf
 from tensorflow.keras import layers
 
 
-
-class LSTM(keras.Model):
+class LSTM_AMC(keras.Model):
     def __init__(self, input_shape, num_classes = 11):
-        super(LSTM, self).__init__()
+        super(LSTM_AMC, self).__init__()
 
         #self.inputs = layers.Input(input_shape, name='input')
         self.lstm1 = layers.LSTM(units=128, return_sequences=True)
@@ -56,7 +55,3 @@ class VTCNN(keras.Model):
         # Load weights if provided
         if weights is not None:
             self.load_weights(weights)
-
-
-
-
