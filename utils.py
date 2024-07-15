@@ -25,15 +25,15 @@ def total_plotter(history, model_name):
 
 def save_results(acc, acc_mod_snr, bers, model_name):
     # Save accuracy for each modulation type per SNR
-    with open('acc_mod_snr.json', 'w') as f:
+    with open(f'{model_name}_acc_mod_snr.json', 'w') as f:
         json.dump({"model": model_name, "acc_mod_snr": acc_mod_snr.tolist()}, f)
 
     # Save overall accuracy per SNR
-    with open('acc.json', 'w') as f:
+    with open(f'{model_name}_acc.json', 'w') as f:
         json.dump({"model": model_name, "acc": acc}, f)
 
     # Save overall accuracy per SNR
-    with open('bers.json', 'w') as f:
+    with open(f'{model_name}_bers.json', 'w') as f:
         json.dump({"model": model_name, "bers": bers}, f)
 
 
@@ -47,7 +47,7 @@ def evaluate_per_snr(model, X_test, Y_test, snrs, classes, labels, test_indices,
         test_X_i = X_test[np.where(np.array(snr_test) == snr)]
         test_Y_i = Y_test[np.where(np.array(snr_test) == snr)]
         
-        test_Y_i_hat = model.predict(test_X_i)
+        test_Y_i_hat = model(test_X_i)
 
         test_Y_i_hat = np.argmax(test_Y_i_hat, axis=1) #Predictions
         test_Y_i = np.argmax(test_Y_i, axis=1) #Labels
