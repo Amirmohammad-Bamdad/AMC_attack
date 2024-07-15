@@ -8,13 +8,18 @@ from sklearn.decomposition import PCA
 
 
 ##########################################################
+model_name = "VTCNN"
+oracle_name = "LSTM_AMC"
+
 loss_func = tf.keras.losses.CategoricalCrossentropy()
+acc_func = tf.keras.metrics.Accuracy()
+
 model_VTCNN = modelFile.VTCNN(input_shape=(2, 128), num_classes= 11).model   ## VT-CNN
-model_LSTM = modelFile.LSTM(input_shape=(2, 128), num_classes= 11)           ## LSTM
+model_LSTM = modelFile.LSTM_AMC(input_shape=(2, 128), num_classes= 11)       ## LSTM
 ##########################################################
 
-def initialize_parameters(model_name):
-    weight_path = f'./{model_name}_weights.h5'
+def initialize_parameters():
+    weight_path = f'./{model_name}_weights/'
     path = 'E:\Clemson\Codes\AMC_attack\RML2016.10a\RML2016.10a_dict.pkl'
     data = loader.RMLDataset(path)
     mods = data.mods
@@ -27,11 +32,11 @@ def initialize_parameters(model_name):
     
     if model_name=="VTCNN": 
         model = model_VTCNN
-    elif model_name=="LSTM":
+    elif model_name=="LSTM_AMC":
         model = model_LSTM
 
     model.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-    model.load_weights(weight_path)
+    model = tf.saved_model.load(weight_path)
 
     epsilons = [0.0001, 0.0005, 0.0008, 0.001, 0.005, 0.008, 0.01, 0.5]
 
@@ -65,7 +70,7 @@ def single_sample_test(Y, Y_adv_signal, input_label, classes):
     
 
 def black_box(oracle, subtitute_model, attack, x_test, y_test, snrs, mods, 
-              test_indices, snr_labels, epsilons, oracle_name):
+              test_indices, snr_labels, epsilons):
     '''
     Oracle is the model that we want to attack to. We don't know its parameters or architecture.
     subtitute model is the model that we use to create perturbations for dataset (here 
@@ -88,24 +93,48 @@ def black_box(oracle, subtitute_model, attack, x_test, y_test, snrs, mods,
 
 
 
-def adversary_test(model, r, data, labels, snrs, mods, test_indices, snr_labels, attack_name):
+def adversary_test(model, r, data, labels, snrs, mods,
+                    test_indices, snr_labels, attack_name, is_blackbox= False):
     adv_data = data + r
-    test_loss, test_acc  = model.evaluate(data, labels, batch_size= 256)
-    adv_test_loss, adv_test_acc  = model.evaluate(adv_data, labels, batch_size= 256)
-    print("Test accuracy (Normal): ", test_acc)
-    print("Test loss (Normal): ", test_loss)
-    print("Test accuracy (Adversarial): ", adv_test_acc)
-    print("Test loss (Adversarial): ", adv_test_loss)
+    
+    #Normal
+    y_test_hat = model(data)
+    max_values = tf.reduce_max(y_test_hat, axis=1, keepdims=True)
+    mask = tf.equal(y_test_hat, max_values)
+    y_test_hat = tf.cast(mask, dtype=tf.int32)    
+    
+    test_loss = loss_func(y_test_hat, labels)
+    test_acc = acc_func(y_test_hat, labels)
+    
+    #Adversarial
+    adv_y_test_hat = model(adv_data)
+    adv_max_values = tf.reduce_max(adv_y_test_hat, axis=1, keepdims=True)
+    adv_mask = tf.equal(adv_y_test_hat, adv_max_values)
+    adv_y_test_hat = tf.cast(adv_mask, dtype=tf.int32)    
+    
+    adv_test_loss = loss_func(adv_y_test_hat, labels)
+    adv_test_acc = acc_func(adv_y_test_hat, labels)
+
+    print("Test accuracy (Normal): ", test_acc.numpy())
+    print("Test loss (Normal): ", test_loss.numpy())
+    print("Test accuracy (Adversarial): ", adv_test_acc.numpy())
+    print("Test loss (Adversarial): ", adv_test_loss.numpy())
     
     proto_tensor = tf.make_tensor_proto(adv_data)
     adv_data = tf.make_ndarray(proto_tensor)
     
+    if is_blackbox:
+        name = oracle_name
+    else:
+        name = model_name
+
     _, acc_mod_snr, bers = utils.evaluate_per_snr(model= model, X_test= adv_data, Y_test= labels,
                                            snrs= snrs, classes= mods, labels= snr_labels,
-                                             test_indices= test_indices)
+                                             test_indices= test_indices, model_name= name)
     
-    utils.plot_accuracy_per_snr(snrs= snrs, acc_mod_snr= acc_mod_snr, classes= mods, name= attack_name)
-    utils.plot_ber_vs_snr(snrs, bers, name= attack_name)
+    utils.plot_accuracy_per_snr(snrs= snrs, acc_mod_snr= acc_mod_snr, 
+                                classes= mods, name= attack_name, model_name= name)
+    utils.plot_ber_vs_snr(snrs, bers, name= attack_name, model_name= name)
 
 
 def FGSM(model, epsilons, input_signal, input_label, x_test, y_test,
@@ -124,7 +153,7 @@ def FGSM(model, epsilons, input_signal, input_label, x_test, y_test,
         perturbation = eps*perturbation
         adv_signal = input_signal + perturbation
         Y_adv_signal = model(adv_signal)
-        Y = model.predict(input_signal)
+        Y = model(input_signal)
         
         #print(f"epsilon = {eps}")
         #single_sample_test(Y, Y_adv_signal, input_label, classes)
@@ -184,7 +213,7 @@ def bisection_search_FGM(model, input_data, input_label, classes, snr_labels):
             avg_epsilon = (max_epsilon + min_epsilon)/2
             adv_x = input_data - r_norm*avg_epsilon
 
-            adv_label = model.predict(adv_x, verbose='False')
+            adv_label = model(adv_x, verbose='False')
             
             if np.argmax(adv_label, axis=1) == np.argmax(input_label, axis=1):
                 min_epsilon = avg_epsilon
@@ -204,8 +233,8 @@ def bisection_search_FGM(model, input_data, input_label, classes, snr_labels):
     perturbation = epsilon_star * norm_perturbation
 
     adv_input = input_data - perturbation
-    Y_adv_signal = model.predict(adv_input)
-    Y = model.predict(input_data)
+    Y_adv_signal = model(adv_input)
+    Y = model(input_data)
 
     #single_sample_test(Y, Y_adv_signal, input_label, classes)
     adversary_test(model, Y_adv_signal, x_test, y_test, snrs, mods,
@@ -246,7 +275,7 @@ def uap_pca_attack(model, data_points, label_points, x_test, y_test,
 
 if __name__ == "__main__":
     model, epsilons, snrs, x_test, y_test, x_val, y_val, mods,\
-                    labels, test_indices = initialize_parameters(model_name="VTCNN")
+                    labels, test_indices = initialize_parameters()
     
     input_signal, input_label = sample_input(x_test, y_test)
     reshaped_input = tf.expand_dims(input_signal, axis=0)
@@ -262,12 +291,12 @@ if __name__ == "__main__":
     oracle = model_LSTM
     subtitute = model_VTCNN
     
-    weight_path = f'./LSTM_weights.h5'
+    weight_path = f'./{oracle_name}_weights/'
     oracle.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     oracle.built = True
-    oracle.load_weights(weight_path)
+    oracle = tf.saved_model.load(weight_path)
 
     black_box(oracle= oracle, subtitute_model= subtitute, attack= "PGD",
                x_test= x_test, y_test= y_test, snrs= snrs, mods=mods, 
               test_indices= test_indices, snr_labels= labels,
-                epsilons= epsilons, oracle_name= "LSTM")
+                epsilons= epsilons)
