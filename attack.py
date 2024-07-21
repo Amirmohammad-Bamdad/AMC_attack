@@ -5,14 +5,13 @@ import random
 import numpy as np
 import utils
 from sklearn.decomposition import PCA
-
+from sklearn.metrics import accuracy_score
 
 ##########################################################
 model_name = "VTCNN"
 oracle_name = "LSTM_AMC"
 
 loss_func = tf.keras.losses.CategoricalCrossentropy()
-acc_func = tf.keras.metrics.Accuracy()
 
 model_VTCNN = modelFile.VTCNN(input_shape=(2, 128), num_classes= 11).model   ## VT-CNN
 model_LSTM = modelFile.LSTM_AMC(input_shape=(2, 128), num_classes= 11)       ## LSTM
@@ -38,7 +37,7 @@ def initialize_parameters():
     model.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     model = tf.saved_model.load(weight_path)
 
-    epsilons = [0.0001, 0.0005, 0.0008, 0.001, 0.005, 0.008, 0.01, 0.5]
+    epsilons = [0.0001, 0.0005, 0.0008, 0.001, 0.005, 0.008, 0.01, 0.5, 0.8, 1, 1.5, 2]
 
     return model, epsilons, snrs, x_test, y_test, x_val, y_val, mods, labels, test_indices
 
@@ -47,11 +46,11 @@ def sample_input(inputs, labels):
     random_index = random.randrange(len(inputs))
     return inputs[random_index], labels[random_index]
 
-
+@tf.function
 def calculate_gradient(model, input_signal, input_label):
     with tf.GradientTape() as tape:
         tape.watch(input_signal)
-        y = model(input_signal)
+        y = model(input_signal, training=False)
         loss = loss_func(input_label, y)
 
     gradient = tape.gradient(loss, input_signal)
@@ -88,6 +87,7 @@ def black_box(oracle, subtitute_model, attack, x_test, y_test, snrs, mods,
                                   iters= 20, eps= 0.5, snrs=None, mods=None, test_indices=None,
                                   snr_labels=None, test_acc=False)
 
+    print(perturbation)
     adversary_test(oracle, perturbation, x_test, y_test, snrs, mods, 
               test_indices, snr_labels, attack_name= f"BlackBox_{attack}_attack_on_{oracle_name}")
 
@@ -98,26 +98,35 @@ def adversary_test(model, r, data, labels, snrs, mods,
     adv_data = data + r
     
     #Normal
-    y_test_hat = model(data)
+    y_test_hat = model(data, training=False)
+    
     max_values = tf.reduce_max(y_test_hat, axis=1, keepdims=True)
     mask = tf.equal(y_test_hat, max_values)
-    y_test_hat = tf.cast(mask, dtype=tf.int32)    
-    
+    y_test_hat = tf.cast(mask, dtype=tf.int32) 
+
     test_loss = loss_func(y_test_hat, labels)
-    test_acc = acc_func(y_test_hat, labels)
+    test_acc = accuracy_score(tf.math.argmax(labels, axis=1), tf.math.argmax(y_test_hat, axis=1))
+
     
     #Adversarial
-    adv_y_test_hat = model(adv_data)
+    adv_y_test_hat = model(adv_data, training=False)
+ 
     adv_max_values = tf.reduce_max(adv_y_test_hat, axis=1, keepdims=True)
     adv_mask = tf.equal(adv_y_test_hat, adv_max_values)
-    adv_y_test_hat = tf.cast(adv_mask, dtype=tf.int32)    
+    adv_y_test_hat = tf.cast(adv_mask, dtype=tf.int32) 
     
+    #print(tf.argmax(adv_y_test_hat, 1))
+    #adv_y_test_hat = tf.argmax(adv_y_test_hat, 1)
+    #labels= tf.argmax(labels, 1)
     adv_test_loss = loss_func(adv_y_test_hat, labels)
-    adv_test_acc = acc_func(adv_y_test_hat, labels)
+    adv_test_acc = accuracy_score(tf.math.argmax(labels, axis=1), tf.math.argmax(adv_y_test_hat, axis=1))
 
-    print("Test accuracy (Normal): ", test_acc.numpy())
+    #print(np.sum(np.argmax(adv_y_test_hat, axis=1)==np.argmax(labels, axis=1)))
+    #print(np.sum(np.argmax(y_test_hat, axis=1)==np.argmax(labels, axis=1)))
+    
+    print("Test accuracy (Normal): ", test_acc)
     print("Test loss (Normal): ", test_loss.numpy())
-    print("Test accuracy (Adversarial): ", adv_test_acc.numpy())
+    print("Test accuracy (Adversarial): ", adv_test_acc)
     print("Test loss (Adversarial): ", adv_test_loss.numpy())
     
     proto_tensor = tf.make_tensor_proto(adv_data)
@@ -145,25 +154,46 @@ def FGSM(model, epsilons, input_signal, input_label, x_test, y_test,
     input_signal = tf.convert_to_tensor(input_signal)
     input_label = tf.convert_to_tensor(input_label)
     r = None
-    epsilon = None
     
     for eps in epsilons:
         gradient = calculate_gradient(model, input_signal, input_label)
         perturbation = tf.sign(gradient)
         perturbation = eps*perturbation
         adv_signal = input_signal + perturbation
-        Y_adv_signal = model(adv_signal)
-        Y = model(input_signal)
-        
+        Y_adv_signal = model(adv_signal, training=False)
+        #Y = model(input_signal)
+        thresh_size = 0.15
+
         #print(f"epsilon = {eps}")
         #single_sample_test(Y, Y_adv_signal, input_label, classes)
-        if (np.sum(Y == Y_adv_signal) > Y.shape[0]//2) or (eps == epsilons[-1]):
-            epsilon = eps
+        #Y = np.argmax(Y, axis=1)
+        #Y_adv_signal = np.argmax(Y_adv_signal, axis=1)
+        
+        max_values = tf.reduce_max(Y_adv_signal, axis=1, keepdims=True)
+        mask = tf.equal(Y_adv_signal, max_values)
+        Y_adv_signal = tf.cast(mask, dtype=tf.int32)    
+
+        #max_values = tf.reduce_max(Y, axis=1, keepdims=True)
+        #mask = tf.equal(Y, max_values)
+        #Y = tf.cast(mask, dtype=tf.int32)
+
+        #print(thresh_size)
+        #print(np.sum(Y == Y_adv_signal))
+        acc = accuracy_score(Y_adv_signal, input_label)
+        #advacc2= accuracy_score(Y_adv_signal, input_label)
+        #print(advacc)
+        #print(advacc2)
+
+        #acc = accuracy_score(Y, input_label).numpy()
+        #acc2= accuracy_score(Y, input_label)
+        #print(acc)
+        #print(acc2)
+        
+        if (acc < thresh_size) or (eps == epsilons[-1]):
             print(f"The best epsilon is: {eps}")
             r= perturbation
             break
     
-    r = r*epsilon
     if test_acc:
         adversary_test(model= model, r= r, data= x_test, labels= y_test,
                         snrs= snrs, mods= classes, test_indices= test_indices,
@@ -176,12 +206,12 @@ def pgd_attack(model, data_points, label_points, x_test, y_test, iters, eps,
     data_points = tf.convert_to_tensor(data_points)
     label_points = tf.convert_to_tensor(label_points)
     adv_signal = tf.identity(data_points)
-    perturbation = None
+    perturbation = tf.zeros((22000, 2, 128)) 
 
     for _ in range(iters):
         grad = calculate_gradient(model, adv_signal, label_points)
-        perturbation = tf.sign(grad)
-        perturbation = eps*perturbation
+        tmp = tf.sign(grad)
+        perturbation += eps* tmp
         adv_signal = adv_signal + perturbation
         adv_signal = tf.clip_by_value(adv_signal, adv_signal - eps, adv_signal + eps)
 
@@ -282,15 +312,18 @@ if __name__ == "__main__":
     reshaped_label = tf.expand_dims(input_label, axis=0)
 
     #White-Box Attack
-    #FGSM(model, epsilons, x_val, y_val, x_test, y_test, snrs, mods, test_indices, labels)
+    #r1 = FGSM(model, epsilons, x_val, y_val, x_test, y_test, snrs, mods, test_indices, labels)
     #bisection_search_FGM(model, reshaped_input, reshaped_label, mods, labels)
     #uap_pca_attack(model, x_val, y_val, x_test, y_test, snrs, mods, test_indices, labels)
-    #pgd_attack(model, x_val, y_val, x_test, y_test, 20, 0.5, snrs, mods, test_indices, labels)
+    #r2 = pgd_attack(model, x_val, y_val, x_test, y_test, 20, 0.5, snrs, mods, test_indices, labels)
+    #print(r2)
+    #print(r1)
+    #
     
     #Black-Box Attack
     oracle = model_LSTM
-    subtitute = model_VTCNN
-    
+    subtitute = model
+
     weight_path = f'./{oracle_name}_weights/'
     oracle.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     oracle.built = True
