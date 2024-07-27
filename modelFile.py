@@ -1,6 +1,18 @@
 from tensorflow import keras 
 import tensorflow as tf 
 from tensorflow.keras import layers
+import numpy as np
+
+def predict_in_batches(model, input_data, batch_size= 1024):
+    num_samples = input_data.shape[0]
+    predictions = []
+
+    for i in range(0, num_samples, batch_size):
+        batch_data = input_data[i:i+batch_size]
+        batch_predictions = model(batch_data)
+        predictions.append(batch_predictions)
+
+    return np.concatenate(predictions, axis=0)
 
 
 class LSTM_AMC(keras.Model):
