@@ -12,8 +12,8 @@ from sklearn.metrics import accuracy_score
 from modelFile import predict_in_batches
 
 ##########################################################
-model_name = "LSTM_AMC"
-oracle_name = "VTCNN"
+model_name = "VTCNN"
+oracle_name = "LSTM_AMC"
 epochs = 100
 batch_size = 256
 loss_func = tf.keras.losses.CategoricalCrossentropy()
@@ -43,7 +43,7 @@ def initialize_parameters():
     model.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     model = tf.saved_model.load(weight_path)
 
-    epsilons = [0.0001, 0.0005, 0.0008, 0.001, 0.005, 0.008, 0.01, 0.5, 0.8, 1]
+    epsilons = [1e-7, 1e-6, 1e-5, 0.0001, 0.0005, 0.0008, 0.001, 0.005, 0.008, 0.01, 0.5, 0.8, 1]
 
     return model, epsilons, snrs, x_test, y_test, x_val, y_val, x_train, y_train,\
         mods, labels, test_indices
@@ -100,7 +100,6 @@ def black_box(oracle, subtitute_model, attack, x_test, y_test, snrs, mods,
                                   iters= 20, eps= 0.5, snrs=None, mods=None, test_indices=None,
                                   snr_labels=None, test_acc=False)
 
-    print(perturbation)
     adversary_test(oracle, perturbation, x_test, y_test, snrs, mods, 
               test_indices, snr_labels, attack_name= f"BlackBox_{attack}_attack_on_{oracle_name}")
 
@@ -152,11 +151,13 @@ def adversary_test(model, adv_data, data, labels, snrs, mods,
     utils.plot_ber_vs_snr(snrs, bers, name= attack_name, model_name= name)
 
 
-def FGSM(model, epsilons, input_signal, input_label, x_test, y_test,
-          snrs, classes, test_indices, snr_labels, test_acc = True, is_adv_trained= False):
+def FGSM(model, epsilons, input_signal, input_label, snrs, classes, test_indices,
+          snr_labels, test_acc = True, is_adv_trained= False):
     '''
         https://arxiv.org/pdf/1412.6572
     '''
+    x,y = input_signal, input_label
+
     input_signal = tf.convert_to_tensor(input_signal)
     input_label = tf.convert_to_tensor(input_label)
     adv_signal = None
@@ -168,8 +169,7 @@ def FGSM(model, epsilons, input_signal, input_label, x_test, y_test,
         adv_signal = input_signal + perturbation
         Y_adv_signal = predict_in_batches(model, adv_signal)
 
-        thresh_size = 0.15
-
+        thresh_size = 0.2
         max_values = tf.reduce_max(Y_adv_signal, axis=1, keepdims=True)
         mask = tf.equal(Y_adv_signal, max_values)
         Y_adv_signal = tf.cast(mask, dtype=tf.int32)    
@@ -187,14 +187,17 @@ def FGSM(model, epsilons, input_signal, input_label, x_test, y_test,
         name = 'FGSM'
 
     if test_acc:
-        adversary_test(model= model, adv_data= adv_signal, data= x_test, labels= y_test,
+        adversary_test(model= model, adv_data= adv_signal, data= x, labels= y,
                         snrs= snrs, mods= classes, test_indices= test_indices,
                           snr_labels= snr_labels, attack_name= name)
+        
     return adv_signal
         
 
-def pgd_attack(model, data_points, label_points, x_test, y_test, iters, eps,
-                            snrs, mods, test_indices, snr_labels, test_acc=True):
+def pgd_attack(model, data_points, label_points, iters, eps, snrs, mods,
+                test_indices, snr_labels, test_acc=True):
+
+    x,y = data_points, label_points
 
     data_points = tf.convert_to_tensor(data_points)
     label_points = tf.convert_to_tensor(label_points)
@@ -207,9 +210,10 @@ def pgd_attack(model, data_points, label_points, x_test, y_test, iters, eps,
         adv_signal = tf.clip_by_value(adv_signal, data_points - eps, data_points + eps)
 
     if test_acc:
-        adversary_test(model= model, adv_data= adv_signal, data= x_test, labels= y_test,
+        adversary_test(model= model, adv_data= adv_signal, data= x, labels= y,
                         snrs= snrs, mods= mods, test_indices= test_indices,
                           snr_labels= snr_labels, attack_name= "PGD")
+        
     return adv_signal
 
 
@@ -253,19 +257,18 @@ def bisection_search_FGM(model, input_data, input_label, classes, snr_labels):
     perturbation = epsilon_star * norm_perturbation
 
     adv_input = input_data - perturbation
-    Y_adv_signal = predict_in_batches(model, adv_input)
-    Y = predict_in_batches(model, input_data)
 
-    #single_sample_test(Y, Y_adv_signal, input_label, classes)
-    adversary_test(model, Y_adv_signal, x_test, y_test, snrs, mods,
+    adversary_test(model, adv_input, input_data, input_label, snrs, mods,
                     test_indices, snr_labels, attack_name= "BiSearch_FGM")
 
 
-def uap_pca_attack(model, data_points, label_points, x_test, y_test,
-                        snrs, mods, test_indices, snr_labels, test_acc= True):
+def uap_pca_attack(model, data_points, label_points, snrs, mods, test_indices,
+                    snr_labels, test_acc= True):
     '''
     https://arxiv.org/abs/1808.07713
     '''
+    x,y = data_points, label_points
+    
     max_epsilon = np.linalg.norm(data_points)
     
     data_points = tf.convert_to_tensor(data_points)
@@ -287,12 +290,15 @@ def uap_pca_attack(model, data_points, label_points, x_test, y_test,
     UAP_r = tf.expand_dims(UAP_r, axis=-1)
 
     extended_UAP = tf.tile(UAP_r, [1,2,128])
+    extended_UAP = tf.cast(extended_UAP, tf.float32)
+    
+    adv_data = extended_UAP + data_points
 
     if test_acc:
-        adversary_test(model, extended_UAP, x_test, y_test, snrs, mods,
-                        test_indices, snr_labels, attack_name= "UAP_PCA")
+        adversary_test(model, adv_data, x, y, snrs, mods,
+                    test_indices, snr_labels, attack_name= "UAP_PCA")
     
-    return extended_UAP
+    return extended_UAP, adv_data
 
 
 
@@ -305,15 +311,14 @@ if __name__ == "__main__":
     reshaped_label = tf.expand_dims(input_label, axis=0)
 
     #White-Box Attack
-    #FGSM(model, epsilons, x_val, y_val, x_test, y_test,\
-    #           snrs, mods, test_indices, labels, test_acc=False)
+    #FGSM(model, epsilons, x_test, y_test, snrs, mods, test_indices, labels)
     
     #bisection_search_FGM(model, reshaped_input, reshaped_label, mods, labels)
-    #uap_pca_attack(model, x_val, y_val, x_test, y_test,\
-    #  snrs, mods, test_indices, labels)
 
-    #pgd_attack(model, x_val, y_val, x_test, y_test, 10, 0.005, snrs, mods, test_indices, labels)
-
+    #uap_pca_attack(model, x_test, y_test, snrs, mods, test_indices, labels)
+    
+    #pgd_attack(model, x_test, y_test, 10, 0.005, snrs, mods, test_indices, labels)
+    
     
     #Black-Box Attack
     #oracle = model_LSTM
@@ -331,7 +336,7 @@ if __name__ == "__main__":
 
 
     #Attack on Adversarial Trained
-    attack_name = "FGSM"
+    trained_attack_name = "UAP_PCA"
     if model_name=="VTCNN": 
         adv_model = model_VTCNN
     elif model_name=="LSTM_AMC":
@@ -339,7 +344,7 @@ if __name__ == "__main__":
     
     adv_model.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     
-    adv_weight_path = f'./adv_{attack_name}_{model_name}_weights/'
+    adv_weight_path = f'./adv_{trained_attack_name}_{model_name}_weights/'
     callbacks = [
         keras.callbacks.ModelCheckpoint(adv_weight_path, monitor='val_loss', verbose= 1, save_best_only= True, mode= 'auto', save_format="tf"),
         keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor= 0.5, verbose= 1, patince= 5, min_lr= 0.000001),
@@ -353,42 +358,31 @@ if __name__ == "__main__":
         aug = AdversaryAug.datasetAug(model_name, adv_model, x_train, y_train, x_val, y_val)
         x1, y1, x2, y2 = aug.sampler()
         
-        x1 = FGSM(model, epsilons, x1, y1, None, None,\
-                    None, None, None, None, test_acc= False)
-        
-        #x1 = pgd_attack(model, x1, y1, None, None, 10, 0.0005,\
-        #                 None, None, None, None, test_acc= False)
-        
-        #r= uap_pca_attack(model, x1, y1, None, None,\
-        #    None, None, None, None, test_acc = False)
-        #x1 = tf.cast((r+x1), tf.float32)
-        
-        x2 = FGSM(model, epsilons, x2, y2, None, None,\
-                    None, None, None, None, test_acc= False)
-        
-        #x2 = pgd_attack(model, x2, y2, None, None, 10, 0.0005,\
-        #                 None, None, None, None, test_acc= False)
-        
-        #r= uap_pca_attack(model, x2, y2, None, None,\
-        #    None, None, None, None, test_acc = False)
-        #x2 = tf.cast((r+x2), tf.float32)
+        if trained_attack_name == "FGSM":
+            x1 = FGSM(model, epsilons, x1, y1, None, None, None, None, test_acc= False)
+            x2 = FGSM(model, epsilons, x2, y2, None, None, None, None, test_acc= False)
 
+        elif trained_attack_name == "PGD":
+            x1 = pgd_attack(model, x1, y1, 10, 0.005, None, None, None, None, test_acc= False)
+            x2 = pgd_attack(model, x2, y2, 10, 0.005, None, None, None, None, test_acc= False)
+        
+        elif trained_attack_name == "UAP_PCA":
+            _, x1= uap_pca_attack(model, x1, y1, None, None, None, None, test_acc = False)
+            _, x2= uap_pca_attack(model, x2, y2, None, None, None, None, test_acc = False)
+                
+        
         aug_x_train, aug_y_train, aug_x_val, aug_y_val =\
               aug.augment_dataset(x1,y1,x2,y2)
         
         aug.adversary_train(batch_size, epochs, aug_x_train, aug_y_train,
                              aug_x_val, aug_y_val, callbacks)
         
-    adv_data = FGSM(model, [0.005], x_test, y_test, None, None,\
-               None, None, None, None, test_acc= False)
+    #adv_data = FGSM(model, [0.005], x_test, y_test, None, None, None, None, test_acc= False)
     
-    #adv_data = pgd_attack(model, x_test, y_test, None, None, 10, 0.005,\
-    #                 None, None, None, None, test_acc= False)
+    #adv_data = pgd_attack(model, x_test, y_test, 10, 0.005, None, None, None, None, test_acc= False)
     
-    #r= uap_pca_attack(model, x_val, y_val, None, None,\
-    #        None, None, None, None, test_acc = False)
-    #adv_data = tf.cast((r+x_test), tf.float32)
+    _, adv_data = uap_pca_attack(model, x_test, y_test, None, None, None, None, test_acc = False)
     
     adversary_test(model= adv_model, adv_data= adv_data, data= x_test, labels= y_test,
                 snrs= snrs, mods= mods, test_indices= test_indices,
-                  snr_labels= labels, attack_name= "FGSM_on_adversarially_trained_model_with_FGSM")
+                  snr_labels= labels, attack_name= f"UAP(PCA)_on_adversarially_trained_model_with_{trained_attack_name}")
