@@ -1,7 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import tensorflow as tf
 from sklearn.metrics import confusion_matrix
 import json
+import datetime
+from tensorflow.keras.callbacks import TensorBoard
 
 def total_plotter(history, model_name):
     plt.plot(history['loss'], label='loss')
@@ -112,12 +115,43 @@ def calculate_ber(y, labels):
     return ber
 
 
-def plot_ber_vs_snr(snrs, bers, model_name, name="No_Attack"):
-    plt.plot(snrs, list(bers.values()), marker='o', linestyle='-')
+def tensor_board_plotter(snrs, bers, name='ber'):
+    log_dir = "logs/ber_test/"
+    writer = tf.summary.create_file_writer(log_dir)
+        
+    with writer.as_default():
+        for snr, ber in zip(snrs, bers):
+            print(snr, ber)
+            tf.summary.scalar(name, ber, step=snr)
+
+
+def log_image_to_tensorboard(filename, identifier):
+    log_dir = "logs/metric/"
+    # Read the image file
+    image = tf.io.read_file(filename)
+    image = tf.image.decode_image(image, channels=3)
+    
+    # Ensure image is in uint8 format
+    image = tf.image.convert_image_dtype(image, dtype=tf.uint8)
+    
+    # Create a file writer
+    with tf.summary.create_file_writer(log_dir).as_default():
+        with tf.summary.record_if(True):
+            tf.summary.image(f'Composite Plot {identifier}', [image], step=identifier)
+
+
+def plot_ber_vs_snr(snrs, bers, model_name, attack_name=["No_Attack"]):
+    plt.figure(figsize=(10, 6))
+    for i, ber_list in enumerate(bers):
+        plt.plot(snrs, list(ber_list.values()), label= attack_name[i], marker='o', linestyle='-', color=f'C{i}')
+    
+    plt.ylim(0.0, 1.0)
     plt.xlabel("Signal to Noise Ratio (SNR)")
     plt.ylabel("Bit Error Rate (BER)")
     plt.grid(True)
-    plt.title(f"BER vs. SNR ({name})")
-    plt.tight_layout()
-    plt.savefig(f"figure/{model_name}_ber_vs_snr_{name}.png")
+    plt.legend()
+    plt.title(f"BER vs. SNR ({model_name})")
+    #plt.tight_layout()
+    filename= f"logs/ber_vs_snr_{model_name}.png"
+    plt.savefig(filename)
     plt.close()
