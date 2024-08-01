@@ -10,8 +10,8 @@ import numpy as np
 import json
 
 ###########################################################################
-model_name = "LSTM_AMC"
-
+models = ["VTCNN", "ResNet18", "LSTM"]
+model_name = models[1]
 epochs = 100
 batch_size = 256
 path = 'E:\Clemson\Codes\AMC_attack\RML2016.10a\RML2016.10a_dict.pkl'
@@ -23,7 +23,8 @@ labels = data.label
 test_indices = data.test_indices
 
 #model = modelFile.VTCNN(input_shape=(2, 128), num_classes= len(mods)).model
-model = modelFile.LSTM_AMC(input_shape=(128, 2), num_classes= len(mods))
+#model = modelFile.LSTM_AMC(input_shape=(128, 2), num_classes= len(mods))
+model = modelFile.ResNet(input_shape=(2,128), num_layers=18, num_classes= len(mods))
 
 loss_func = tf.keras.losses.CategoricalCrossentropy(name='loss')
 acc_func = tf.keras.metrics.Accuracy(name='accuracy')
@@ -43,13 +44,10 @@ callbacks = [
 
 model.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 model.built = True
-model.summary()
+
 
 if os.path.isdir(weight_path):
-    #model.load_weights(weight_path)
-    model = tf.saved_model.load(weight_path)
-    #model = model.signatures['serving_default']
-    
+    model = tf.saved_model.load(weight_path)  
     with open(f'{model_name}_training_history.pkl', 'rb') as f:
         history = pickle.load(f)
 
