@@ -3,8 +3,6 @@ import numpy as np
 import tensorflow as tf
 from sklearn.metrics import confusion_matrix
 import json
-import datetime
-from tensorflow.keras.callbacks import TensorBoard
 
 def total_plotter(history, model_name):
     plt.plot(history['loss'], label='loss')
@@ -28,15 +26,15 @@ def total_plotter(history, model_name):
 
 def save_results(acc, acc_mod_snr, bers, model_name):
     # Save accuracy for each modulation type per SNR
-    with open(f'{model_name}_acc_mod_snr.json', 'w') as f:
+    with open(f'./history_and_metrics/{model_name}_acc_mod_snr.json', 'w') as f:
         json.dump({"model": model_name, "acc_mod_snr": acc_mod_snr.tolist()}, f)
 
     # Save overall accuracy per SNR
-    with open(f'{model_name}_acc.json', 'w') as f:
+    with open(f'./history_and_metrics/{model_name}_acc.json', 'w') as f:
         json.dump({"model": model_name, "acc": acc}, f)
 
     # Save overall accuracy per SNR
-    with open(f'{model_name}_bers.json', 'w') as f:
+    with open(f'./history_and_metrics/{model_name}_bers.json', 'w') as f:
         json.dump({"model": model_name, "bers": bers}, f)
 
 

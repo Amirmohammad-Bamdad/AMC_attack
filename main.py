@@ -34,7 +34,7 @@ x_train, y_train = data.train_data[0], data.train_data[1]
 x_val, y_val = data.val_data[0], data.val_data[1]
 x_test, y_test = data.test_data[0], data.test_data[1]
 
-weight_path = f'./{model_name}_weights/'
+weight_path = f'./weights/{model_name}_weights/'
 callbacks = [
     keras.callbacks.ModelCheckpoint(weight_path, monitor='val_loss', verbose= 1, save_best_only= True, mode= 'auto', save_format="tf"),
     keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor= 0.5, verbose= 1, patince= 5, min_lr= 0.000001),
@@ -48,7 +48,7 @@ model.built = True
 
 if os.path.isdir(weight_path):
     model = tf.saved_model.load(weight_path)  
-    with open(f'{model_name}_training_history.pkl', 'rb') as f:
+    with open(f'./history_and_metrics/{model_name}_training_history.pkl', 'rb') as f:
         history = pickle.load(f)
 
 else:
@@ -56,7 +56,7 @@ else:
                      validation_data= [x_val, y_val], callbacks= callbacks)
     model.summary()
 
-    with open(f'{model_name}_training_history.pkl', 'wb') as f:
+    with open(f'./history_and_metrics/{model_name}_training_history.pkl', 'wb') as f:
         pickle.dump(history.history, f)
 
     history = history.history
@@ -79,15 +79,15 @@ utils.plot_confusion_matrix(cm= total_cm, classes= mods,
 
 utils.total_plotter(history, model_name)
 
-if os.path.isfile(f'{model_name}_acc_mod_snr.json') and \
-    os.path.isfile(f'{model_name}_acc.json') and \
-        os.path.isfile(f'{model_name}_bers.json'):
+if os.path.isfile(f'./history_and_metrics/{model_name}_acc_mod_snr.json') and \
+    os.path.isfile(f'./history_and_metrics/{model_name}_acc.json') and \
+        os.path.isfile(f'./history_and_metrics/{model_name}_bers.json'):
     
-    with open(f'{model_name}_acc_mod_snr.json', 'r') as f:  
+    with open(f'./history_and_metrics/{model_name}_acc_mod_snr.json', 'r') as f:  
         acc_mod_snr = json.load(f)['acc_mod_snr']
-    with open(f'{model_name}_acc.json', 'r') as f:  
+    with open(f'./history_and_metrics/{model_name}_acc.json', 'r') as f:  
         acc = json.load(f)['acc']
-    with open(f'{model_name}_bers.json', 'r') as f:  
+    with open(f'./history_and_metrics/{model_name}_bers.json', 'r') as f:  
         bers = json.load(f)['bers']
 
 else:
