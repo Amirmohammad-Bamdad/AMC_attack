@@ -12,18 +12,27 @@ from sklearn.metrics import accuracy_score
 from modelFile import predict_in_batches
 
 ##########################################################
-model_name = "VTCNN"
-oracle_name = "LSTM_AMC"
+tf.random.set_seed(0)
+np.random.seed(0)
+
+attacks = ["FGSM", "PGD", "PCA", "MIM"]
+trained_attack_name = "PGD"
+
+models = ["VTCNN", "ResNet18", "LSTM"]
+model_name = models[0]
+substitute_name = models[1]
+
 epochs = 100
 batch_size = 256
 loss_func = tf.keras.losses.CategoricalCrossentropy()
 
 model_VTCNN = modelFile.VTCNN(input_shape=(2, 128), num_classes= 11).model   ## VT-CNN
 model_LSTM = modelFile.LSTM_AMC(input_shape=(2, 128), num_classes= 11)       ## LSTM
+model_ResNet = modelFile.ResNet(input_shape=(2,128), num_layers=18, num_classes= 11)## ResNet18
 ##########################################################
 
 def initialize_parameters():
-    weight_path = f'./{model_name}_weights/'
+    weight_path = f'./weights/{model_name}_weights/'
     path = 'E:\Clemson\Codes\AMC_attack\RML2016.10a\RML2016.10a_dict.pkl'
     data = loader.RMLDataset(path)
     mods = data.mods
@@ -39,13 +48,23 @@ def initialize_parameters():
         model = model_VTCNN
     elif model_name=="LSTM_AMC":
         model = model_LSTM
+    elif model_name == "ResNet18":
+        model = model_ResNet
 
     model.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     model = tf.saved_model.load(weight_path)
+    
+    if substitute_name=="VTCNN": 
+        substitute_model = model_VTCNN
+    elif substitute_name=="LSTM_AMC":
+        substitute_model = model_LSTM
+    elif substitute_name == "ResNet18":
+        substitute_model = model_ResNet
 
+    substitute_model = tf.saved_model.load(f'./weights/{substitute_name}_weights/')
     epsilons = [1e-7, 1e-6, 1e-5, 0.0001, 0.0005, 0.0008, 0.001, 0.005, 0.008, 0.01, 0.5, 0.8, 1]
 
-    return model, epsilons, snrs, x_test, y_test, x_val, y_val, x_train, y_train,\
+    return model, substitute_model, epsilons, snrs, x_test, y_test, x_val, y_val, x_train, y_train,\
         mods, labels, test_indices
 
 
@@ -54,7 +73,7 @@ def sample_input(inputs, labels):
     return inputs[random_index], labels[random_index]
 
 
-def calculate_gradient(model, input_signal, input_label, batch_size= 1024):
+def calculate_gradient(model, input_signal, input_label, batch_size= 2048):
     dataset = tf.data.Dataset.from_tensor_slices((input_signal, input_label))
     dataset = dataset.batch(batch_size)
     gradients = []
@@ -81,32 +100,7 @@ def single_sample_test(Y, Y_adv_signal, input_label, classes):
     print("==================================================")
     
 
-def black_box(oracle, subtitute_model, attack, x_test, y_test, snrs, mods, 
-              test_indices, snr_labels, epsilons):
-    '''
-    Oracle is the model that we want to attack to. We don't know its parameters or architecture.
-    subtitute model is the model that we use to create perturbations for dataset (here 
-    we use test set) and pass the preturbed data to the oracle for test.
-    '''
-
-    if attack == "FGSM":
-        perturbation = FGSM(model= subtitute_model, epsilons= epsilons,
-                             input_signal= x_test, input_label= y_test, x_test=None, 
-                             y_test= None, snrs= None, classes= None, test_indices=None
-                             , snr_labels=None, test_acc= False)
-    elif attack == "PGD":
-        perturbation = pgd_attack(model= subtitute_model, data_points=x_test, 
-                                  label_points= y_test, x_test=None, y_test=None,
-                                  iters= 20, eps= 0.5, snrs=None, mods=None, test_indices=None,
-                                  snr_labels=None, test_acc=False)
-
-    adversary_test(oracle, perturbation, x_test, y_test, snrs, mods, 
-              test_indices, snr_labels, attack_name= f"BlackBox_{attack}_attack_on_{oracle_name}")
-
-
-
-def adversary_test(model, adv_data, data, labels, snrs, mods,
-                    test_indices, snr_labels, attack_name, is_blackbox= False):    
+def adversary_test(model, adv_data, data, labels, snrs, mods, test_indices, snr_labels):    
     #Normal
     y_test_hat = predict_in_batches(model, data)
     
@@ -136,23 +130,22 @@ def adversary_test(model, adv_data, data, labels, snrs, mods,
     
     proto_tensor = tf.make_tensor_proto(adv_data)
     adv_data = tf.make_ndarray(proto_tensor)
-    
-    if is_blackbox:
-        name = oracle_name
-    else:
-        name = model_name
 
+    name = model_name
     _, acc_mod_snr, bers = utils.evaluate_per_snr(model= model, X_test= adv_data, Y_test= labels,
                                            snrs= snrs, classes= mods, labels= snr_labels,
                                              test_indices= test_indices, model_name= name)
     
-    utils.plot_accuracy_per_snr(snrs= snrs, acc_mod_snr= acc_mod_snr, 
-                                classes= mods, name= attack_name, model_name= name)
-    utils.plot_ber_vs_snr(snrs, bers, name= attack_name, model_name= name)
+    #utils.plot_accuracy_per_snr(snrs= snrs, acc_mod_snr= acc_mod_snr, 
+    #                            classes= mods, name= attack_name, model_name= name)
+
+    #utils.tensor_board_plotter(bers.keys(), bers.values())
+    #utils.plot_ber_vs_snr(snrs, bers, name= attack_name, model_name= name)
+    return acc_mod_snr, bers 
 
 
 def FGSM(model, epsilons, input_signal, input_label, snrs, classes, test_indices,
-          snr_labels, test_acc = True, is_adv_trained= False):
+          snr_labels, test_acc = True):
     '''
         https://arxiv.org/pdf/1412.6572
     '''
@@ -161,7 +154,8 @@ def FGSM(model, epsilons, input_signal, input_label, snrs, classes, test_indices
     input_signal = tf.convert_to_tensor(input_signal)
     input_label = tf.convert_to_tensor(input_label)
     adv_signal = None
-    
+    best_epsilon = None
+
     for eps in epsilons:
         gradient = calculate_gradient(model, input_signal, input_label)
         perturbation = tf.sign(gradient)
@@ -179,22 +173,19 @@ def FGSM(model, epsilons, input_signal, input_label, snrs, classes, test_indices
         
         if (acc < thresh_size) or (eps == epsilons[-1]):
             print(f"The best epsilon is: {eps}")
+            best_epsilon = eps
             break
 
-    if is_adv_trained:
-        name = "FGSM_on_adversarially_trained_model"
-    else:
-        name = 'FGSM'
-
     if test_acc:
-        adversary_test(model= model, adv_data= adv_signal, data= x, labels= y,
+        _, bers = adversary_test(model= model, adv_data= adv_signal, data= x, labels= y,
                         snrs= snrs, mods= classes, test_indices= test_indices,
-                          snr_labels= snr_labels, attack_name= name)
-        
+                          snr_labels= snr_labels)
+        return bers
+    
     return adv_signal
         
 
-def pgd_attack(model, data_points, label_points, iters, eps, snrs, mods,
+def PGD(model, data_points, label_points, iters, eps, snrs, mods,
                 test_indices, snr_labels, test_acc=True):
 
     x,y = data_points, label_points
@@ -210,18 +201,50 @@ def pgd_attack(model, data_points, label_points, iters, eps, snrs, mods,
         adv_signal = tf.clip_by_value(adv_signal, data_points - eps, data_points + eps)
 
     if test_acc:
-        adversary_test(model= model, adv_data= adv_signal, data= x, labels= y,
+        _, bers = adversary_test(model= model, adv_data= adv_signal, data= x, labels= y,
                         snrs= snrs, mods= mods, test_indices= test_indices,
-                          snr_labels= snr_labels, attack_name= "PGD")
-        
+                          snr_labels= snr_labels)
+        return bers
+    
     return adv_signal
 
 
+def MIM(model, input_data, input_label, iters, decay_factor, eps, snrs, mods,
+         test_indices, snr_labels, test_acc=True):
+    '''
+    Momentum Iterative Method
+    https://arxiv.org/abs/1710.06081
+    '''
 
-def bisection_search_FGM(model, input_data, input_label, classes, snr_labels):
+    adv_data = tf.identity(input_data)
+    g = tf.zeros_like(input_data) # Momentum
+    
+    for _ in range(iters):
+        grad = calculate_gradient(model, adv_data, input_label)
+        grad_l1_norm =tf.norm(grad, ord=1, axis=(1,2), keepdims=True)
+        normal_grad = grad / (grad_l1_norm + 1e-10)
+
+        g = decay_factor*g + normal_grad
+
+        perturbation = eps * tf.sign(g)
+        adv_data = adv_data + perturbation
+        adv_data = tf.clip_by_value(adv_data, input_data - eps, input_data + eps)
+
+    if test_acc:
+        _, bers = adversary_test(model= model, adv_data= adv_data, data= input_data, labels= input_label,
+                     snrs= snrs, mods= mods, test_indices= test_indices,
+                       snr_labels= snr_labels)
+        return bers
+    return adv_data
+
+
+
+def bisection_search_FGM(model, input_data, input_label, classes, snr_labels, snrs,
+                        mods, test_indices, test_acc=True):
     '''
     https://arxiv.org/abs/1808.07713
     '''
+    x,y = input_data, input_label
     eps_acc = 0.00001 * np.linalg.norm(input_data)  
     target_class_onehot = np.zeros([len(classes)])
     epsilon_vector = np.zeros([len(classes)])
@@ -258,8 +281,10 @@ def bisection_search_FGM(model, input_data, input_label, classes, snr_labels):
 
     adv_input = input_data - perturbation
 
-    adversary_test(model, adv_input, input_data, input_label, snrs, mods,
-                    test_indices, snr_labels, attack_name= "BiSearch_FGM")
+    if test_acc:
+        _, bers = adversary_test(model, adv_input, x, y, snrs, mods, test_indices, snr_labels)
+        return bers
+    return adv_input
 
 
 def uap_pca_attack(model, data_points, label_points, snrs, mods, test_indices,
@@ -295,94 +320,149 @@ def uap_pca_attack(model, data_points, label_points, snrs, mods, test_indices,
     adv_data = extended_UAP + data_points
 
     if test_acc:
-        adversary_test(model, adv_data, x, y, snrs, mods,
-                    test_indices, snr_labels, attack_name= "UAP_PCA")
+        _, bers = adversary_test(model, adv_data, x, y, snrs, mods, test_indices, snr_labels)
+        return bers
     
     return extended_UAP, adv_data
 
 
-
-if __name__ == "__main__":
-    model, epsilons, snrs, x_test, y_test, x_val, y_val, x_train, y_train, mods,\
-                    labels, test_indices = initialize_parameters()
+def get_perturbed_data(model, attack_name, original_data, original_label, epsilons):
+    if attack_name == "FGSM":
+        x = FGSM(model, epsilons, original_data, original_label, None, None, None, None, test_acc= False)
     
-    input_signal, input_label = sample_input(x_test, y_test)
-    reshaped_input = tf.expand_dims(input_signal, axis=0)
-    reshaped_label = tf.expand_dims(input_label, axis=0)
-
-    #White-Box Attack
-    #FGSM(model, epsilons, x_test, y_test, snrs, mods, test_indices, labels)
+    elif attack_name == "PGD":
+        x = PGD(model, original_data, original_label, 10, 0.005, None, None, None, None, test_acc= False)
     
-    #bisection_search_FGM(model, reshaped_input, reshaped_label, mods, labels)
-
-    #uap_pca_attack(model, x_test, y_test, snrs, mods, test_indices, labels)
+    elif attack_name == "PCA":
+        _, x= uap_pca_attack(model, original_data, original_label, None, None, None, None, test_acc = False)
+            
+    elif attack_name == "MIM":
+        x = MIM(model, original_data, original_label, 10, 1.0, 0.005, None, None, None, None, test_acc= False)
     
-    #pgd_attack(model, x_test, y_test, 10, 0.005, snrs, mods, test_indices, labels)
-    
-    
-    #Black-Box Attack
-    #oracle = model_LSTM
-    #subtitute = model
-#
-    #weight_path = f'./{oracle_name}_weights/'
-    #oracle.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-    #oracle.built = True
-    #oracle = tf.saved_model.load(weight_path)
-#
-    #black_box(oracle= oracle, subtitute_model= subtitute, attack= "PGD",
-    #           x_test= x_test, y_test= y_test, snrs= snrs, mods=mods, 
-    #          test_indices= test_indices, snr_labels= labels,
-    #            epsilons= epsilons)
+    return x
 
 
-    #Attack on Adversarial Trained
-    trained_attack_name = "UAP_PCA"
-    if model_name=="VTCNN": 
+def white_box_attacks(model, epsilons, x_test, y_test, snrs, mods, test_indices, labels):
+    bers = []
+    attack_names = []
+    
+    ber = FGSM(model, epsilons, x_test, y_test, snrs, mods, test_indices, labels)
+    bers.append(ber)
+    attack_names.append("FGSM")
+
+    ber = PGD(model, x_test, y_test, 10, 0.005, snrs, mods, test_indices, labels)
+    bers.append(ber)
+    attack_names.append("PGD")
+    
+    ber = uap_pca_attack(model, x_test, y_test, snrs, mods, test_indices, labels)
+    bers.append(ber)
+    attack_names.append("PCA")
+
+    ber = MIM(model, x_test, y_test, 10, 1.0, 0.005, snrs, mods, test_indices, labels)
+    bers.append(ber)
+    attack_names.append("MIM")
+
+    utils.plot_ber_vs_snr(snrs, bers, f'{model_name}', attack_names)
+    
+
+def black_box(oracle, substitute_model, x_test, y_test, snrs, mods, 
+              test_indices, snr_labels, epsilons, title):
+    '''
+    Oracle is the model that we want to attack to; and We don't know its parameters or architecture.
+    substitute model is the model that we use to create perturbations for dataset (here 
+    we use test set) and pass the preturbed data to the oracle for test.
+
+    '''
+    bers = []
+
+    for attack in attacks:
+        adv_data = get_perturbed_data(substitute_model, attack, x_test, y_test, epsilons)
+        _, ber= adversary_test(model= oracle, adv_data= adv_data, data= x_test,
+                               labels= y_test, snrs= snrs, mods= mods,
+                               test_indices= test_indices, snr_labels= snr_labels)
+        bers.append(ber)
+    utils.plot_ber_vs_snr(snrs, bers, title, attacks)
+
+
+def adv_trained_attack(normal_model, substitute_model, epsilons, x_train, y_train,
+                    x_val, y_val, x_test, y_test, snrs, mods, test_indices, labels):
+
+    adv_model_name = model_name
+
+    if adv_model_name=="VTCNN": 
         adv_model = model_VTCNN
-    elif model_name=="LSTM_AMC":
+    elif adv_model_name=="LSTM_AMC":
         adv_model = model_LSTM
-    
+    elif adv_model_name == "ResNet18":
+        adv_model = model_ResNet
+
     adv_model.compile(loss= 'categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     
-    adv_weight_path = f'./adv_{trained_attack_name}_{model_name}_weights/'
+    adv_weight_path = f'./weights/adv_{trained_attack_name}_{adv_model_name}_weights/'
     callbacks = [
         keras.callbacks.ModelCheckpoint(adv_weight_path, monitor='val_loss', verbose= 1, save_best_only= True, mode= 'auto', save_format="tf"),
         keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor= 0.5, verbose= 1, patince= 5, min_lr= 0.000001),
         keras.callbacks.EarlyStopping(monitor='val_loss', patience= 50, verbose= 1, mode= 'auto')
         ]
     
+    #########################################################################
+    if trained_attack_name == "FGSM" and adv_model_name == "ResNet18":
+        best_epsilon = [0.001] # When ResNet18 adversarial trained on FGSM
+    elif trained_attack_name == "FGSM" and (adv_model_name == "VTCNN" or adv_model_name == "LSTM"):
+        best_epsilon = [0.005] # When VTCNN and LSTM adversarial trained on FGSM
+    else:
+        best_epsilon = epsilons # When model is not adv trained on FGSM
+    #########################################################################
+
     if os.path.isdir(adv_weight_path):
         adv_model = tf.saved_model.load(adv_weight_path)
-    
-    else:
-        aug = AdversaryAug.datasetAug(model_name, adv_model, x_train, y_train, x_val, y_val)
-        x1, y1, x2, y2 = aug.sampler()
-        
-        if trained_attack_name == "FGSM":
-            x1 = FGSM(model, epsilons, x1, y1, None, None, None, None, test_acc= False)
-            x2 = FGSM(model, epsilons, x2, y2, None, None, None, None, test_acc= False)
 
-        elif trained_attack_name == "PGD":
-            x1 = pgd_attack(model, x1, y1, 10, 0.005, None, None, None, None, test_acc= False)
-            x2 = pgd_attack(model, x2, y2, 10, 0.005, None, None, None, None, test_acc= False)
+    else:
+        aug = AdversaryAug.datasetAug(adv_model_name, adv_model, x_train, y_train, x_val, y_val)
+        sampled_x_trn, sampled_y_trn, sampled_x_val, sampled_y_val = aug.sampler()
         
-        elif trained_attack_name == "UAP_PCA":
-            _, x1= uap_pca_attack(model, x1, y1, None, None, None, None, test_acc = False)
-            _, x2= uap_pca_attack(model, x2, y2, None, None, None, None, test_acc = False)
-                
-        
+        adv_sampled_x_trn = get_perturbed_data(normal_model, trained_attack_name,
+                                            sampled_x_trn, sampled_y_trn, best_epsilon)
+        adv_sampled_x_val = get_perturbed_data(normal_model, trained_attack_name,
+                                            sampled_x_val, sampled_y_val, best_epsilon)
+
         aug_x_train, aug_y_train, aug_x_val, aug_y_val =\
-              aug.augment_dataset(x1,y1,x2,y2)
+            aug.augment_dataset(adv_sampled_x_trn, sampled_y_trn, adv_sampled_x_val, sampled_y_val)
         
         aug.adversary_train(batch_size, epochs, aug_x_train, aug_y_train,
                              aug_x_val, aug_y_val, callbacks)
-        
-    #adv_data = FGSM(model, [0.005], x_test, y_test, None, None, None, None, test_acc= False)
     
-    #adv_data = pgd_attack(model, x_test, y_test, 10, 0.005, None, None, None, None, test_acc= False)
+    # Evaluate the adversarial trained model    
+    black_box(oracle= adv_model, substitute_model= substitute_model,
+              x_test= x_test, y_test= y_test, snrs= snrs, mods=mods, 
+              test_indices= test_indices, snr_labels= labels, epsilons= best_epsilon,
+              title= f'{model_name}_adv_trained_on_{trained_attack_name}__(sub={substitute_name})')
+
+   
+def main():
+    model, substitute_model, epsilons, snrs, x_test, y_test, x_val, y_val,\
+            x_train, y_train, mods, labels, test_indices = initialize_parameters()
     
-    _, adv_data = uap_pca_attack(model, x_test, y_test, None, None, None, None, test_acc = False)
-    
-    adversary_test(model= adv_model, adv_data= adv_data, data= x_test, labels= y_test,
-                snrs= snrs, mods= mods, test_indices= test_indices,
-                  snr_labels= labels, attack_name= f"UAP(PCA)_on_adversarially_trained_model_with_{trained_attack_name}")
+    #input_signal, input_label = sample_input(x_test, y_test)
+    #reshaped_input = tf.expand_dims(input_signal, axis=0)
+    #reshaped_label = tf.expand_dims(input_label, axis=0)
+
+
+    #White-Box Attack
+    #white_box_attacks(model, epsilons, x_test, y_test, snrs, mods, test_indices, labels)
+
+
+    #Black-Box Attack
+    #black_box(oracle= model, substitute_model= substitute_model,
+    #          x_test= x_test, y_test= y_test, snrs= snrs, mods=mods, 
+    #          test_indices= test_indices, snr_labels= labels, epsilons= epsilons,
+    #          title= f"BlackBox_attack_on_{model_name}")
+
+
+    #Attack on Adversarial Trained
+    adv_trained_attack(model, substitute_model, epsilons, x_train, y_train, x_val, y_val,
+                       x_test, y_test, snrs, mods, test_indices, labels)
+
+
+if __name__ == "__main__":
+    main()
